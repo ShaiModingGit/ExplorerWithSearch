@@ -7,7 +7,7 @@ An advanced file explorer extension for Visual Studio Code, inspired by VS Code'
 
 ## Features
 
-![Features](https://github.com/ShaiModingGit/ExplorerWithSearch/blob/main/images/how_to_use.gif?raw=true)
+![Features](https://github.com/ShaiModingGit/ExplorerWithSearch/blob/main/resources/howto.gif?raw=true)
 
 ### � Advanced Search & Filter
 - **Real-time Search**: Search for files by name across your entire workspace
@@ -218,3 +218,4 @@ This extension is provided as-is for educational and development purposes.
 ---
 
 **Enjoy enhanced file exploration with File Explorer++!** 🚀
+
