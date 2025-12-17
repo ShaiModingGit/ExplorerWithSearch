@@ -4,7 +4,11 @@
   "description": "Advanced file explorer for Visual Studio Code",
   "author": "Shai",
   "publisher": "shaisarfaty",
-  "version": "1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ShaiModingGit/ExplorerWithSearch"
+  },  
+  "version": "1.0.1",
   "icon": "resources/icon.png",
   "engines": {
     "vscode": "^1.75.0"
@@ -199,3 +203,4 @@
   }
 
 }
+
