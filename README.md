@@ -192,7 +192,7 @@ The extension follows VS Code's extension architecture:
 
 ## Release Notes
 
-### 0.0.1
+### 1.0.0
 
 Initial release with core features:
 - File and folder browsing
@@ -218,4 +218,5 @@ This extension is provided as-is for educational and development purposes.
 ---
 
 **Enjoy enhanced file exploration with File Explorer++!** 🚀
+
 
