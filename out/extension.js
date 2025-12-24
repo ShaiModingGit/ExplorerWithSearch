@@ -46,9 +46,11 @@ function activate(context) {
     // Connect search view to file explorer
     searchViewProvider.onSearchChange(async (query) => {
         await fileExplorerProvider.setSearchQuery(query);
+        searchViewProvider.setStatus('ready');
     });
     searchViewProvider.onFilterChange(async (filter) => {
         await fileExplorerProvider.setSuffixFilter(filter);
+        searchViewProvider.setStatus('ready');
     });
     searchViewProvider.onAbort(() => {
         fileExplorerProvider.abort();
@@ -57,6 +59,31 @@ function activate(context) {
         fileExplorerProvider.setSearchQuery('');
         fileExplorerProvider.setSuffixFilter('');
     });
+    // Connect file explorer status to search view
+    fileExplorerProvider.onDidIndexChange((isIndexing) => {
+        searchViewProvider.setStatus(isIndexing ? 'indexing' : 'ready');
+    });
+    // Watch for file changes to trigger re-indexing and refresh
+    const watcher = vscode.workspace.createFileSystemWatcher('**/*');
+    const handleFileChange = () => {
+        // Debounce re-indexing to avoid too many updates
+        fileExplorerProvider.rebuildIndex();
+        fileExplorerProvider.refresh();
+    };
+    // Debounce helper
+    let debounceTimer;
+    const debouncedHandleFileChange = () => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(handleFileChange, 1000);
+    };
+    watcher.onDidCreate(debouncedHandleFileChange);
+    watcher.onDidDelete(debouncedHandleFileChange);
+    // We don't need to re-index on content change (onDidChange) unless we were indexing content, 
+    // but here we only index filenames. However, renaming is a create+delete event usually, 
+    // but sometimes handled differently. 
+    // If we want to be safe, we can watch rename if available, but create/delete covers most structure changes.
+    // Actually, onDidChange is for file content. We only care about structure.
+    context.subscriptions.push(watcher);
     // Register the tree data provider
     const treeView = vscode.window.createTreeView('fileExplorePlusPlus.treeView', {
         treeDataProvider: fileExplorerProvider,
@@ -183,12 +210,6 @@ function activate(context) {
             treeView.reveal(editor.document.uri, { select: true, focus: false });
         }
     }));
-    // Watch for file system changes
-    const watcher = vscode.workspace.createFileSystemWatcher('**/*');
-    watcher.onDidCreate(() => fileExplorerProvider.refresh());
-    watcher.onDidDelete(() => fileExplorerProvider.refresh());
-    watcher.onDidChange(() => fileExplorerProvider.refresh());
-    context.subscriptions.push(watcher);
 }
 exports.activate = activate;
 function deactivate() { }

@@ -31,17 +31,25 @@ class FileExplorerProvider {
     constructor() {
         this._onDidChangeTreeData = new vscode.EventEmitter();
         this.onDidChangeTreeData = this._onDidChangeTreeData.event;
+        this._onDidIndexChange = new vscode.EventEmitter();
+        this.onDidIndexChange = this._onDidIndexChange.event;
         this.searchQuery = '';
         this.suffixFilter = '';
         this.searchResults = new Set();
         this.expandedFolders = new Set();
         this.isSearching = false;
         this.abortSearch = false;
+        this.currentSearchToken = 0;
+        // Indexing properties
+        this.fileIndex = [];
+        this.isIndexed = false;
+        this.isIndexing = false;
     }
     setTreeView(treeView) {
         this.treeView = treeView;
     }
     async setSearchQuery(query) {
+        const myToken = ++this.currentSearchToken;
         this.searchQuery = query.toLowerCase();
         // If both search and filter are empty, just refresh without searching
         if (!this.searchQuery && !this.suffixFilter) {
@@ -53,14 +61,21 @@ class FileExplorerProvider {
         this.abortSearch = false;
         this.isSearching = true;
         this.refresh(); // Show loading state
-        await this.updateSearchResults();
-        this.isSearching = false;
-        if (!this.abortSearch) {
-            this.refresh();
-            await this.expandSearchResults();
+        try {
+            await this.updateSearchResults(myToken);
+        }
+        finally {
+            if (this.currentSearchToken === myToken) {
+                this.isSearching = false;
+                if (!this.abortSearch) {
+                    this.refresh();
+                    await this.expandSearchResults();
+                }
+            }
         }
     }
     async setSuffixFilter(suffix) {
+        const myToken = ++this.currentSearchToken;
         this.suffixFilter = suffix.toLowerCase();
         // If both search and filter are empty, just refresh without searching
         if (!this.searchQuery && !this.suffixFilter) {
@@ -72,52 +87,138 @@ class FileExplorerProvider {
         this.abortSearch = false;
         this.isSearching = true;
         this.refresh(); // Show loading state
-        // Re-run the search with the new filter
-        await this.updateSearchResults();
-        this.isSearching = false;
-        if (!this.abortSearch) {
-            this.refresh();
-            await this.expandSearchResults();
+        try {
+            // Re-run the search with the new filter
+            await this.updateSearchResults(myToken);
+        }
+        finally {
+            if (this.currentSearchToken === myToken) {
+                this.isSearching = false;
+                if (!this.abortSearch) {
+                    this.refresh();
+                    await this.expandSearchResults();
+                }
+            }
         }
     }
-    async updateSearchResults() {
+    async rebuildIndex() {
+        this.isIndexed = false;
+        this.indexingPromise = undefined;
+        await this.buildIndex();
+        // Re-run search if active
+        if (this.searchQuery || this.suffixFilter) {
+            const myToken = ++this.currentSearchToken;
+            this.isSearching = true;
+            this.refresh();
+            try {
+                await this.updateSearchResults(myToken);
+            }
+            finally {
+                if (this.currentSearchToken === myToken) {
+                    this.isSearching = false;
+                    if (!this.abortSearch) {
+                        this.refresh();
+                        await this.expandSearchResults();
+                    }
+                }
+            }
+        }
+    }
+    async buildIndex() {
+        if (this.isIndexed) {
+            return;
+        }
+        if (this.indexingPromise) {
+            return this.indexingPromise;
+        }
+        this.indexingPromise = (async () => {
+            this.isIndexing = true;
+            this._onDidIndexChange.fire(true);
+            this.fileIndex = [];
+            if (vscode.workspace.workspaceFolders) {
+                for (const folder of vscode.workspace.workspaceFolders) {
+                    await (0, utils_1.indexWorkspace)(folder.uri, (uri, name) => {
+                        const ext = path.extname(name);
+                        const nameWithoutExt = path.basename(name, ext);
+                        this.fileIndex.push({
+                            uri,
+                            name,
+                            nameWithoutExtLower: nameWithoutExt.toLowerCase(),
+                            extLower: ext.toLowerCase(),
+                            root: folder.uri
+                        });
+                    }, () => false // Don't abort indexing, it's one-time
+                    );
+                }
+            }
+            this.isIndexed = true;
+            this.isIndexing = false;
+            this._onDidIndexChange.fire(false);
+            this.indexingPromise = undefined;
+        })();
+        return this.indexingPromise;
+    }
+    async updateSearchResults(token) {
         this.searchResults.clear();
         this.expandedFolders.clear();
         if (!this.searchQuery && !this.suffixFilter) {
             return;
         }
-        if (!vscode.workspace.workspaceFolders) {
+        // Ensure index is built
+        if (!this.isIndexed) {
+            await this.buildIndex();
+        }
+        // Check if this search has been superseded
+        if (this.currentSearchToken !== token) {
             return;
         }
         const maxResults = 1000; // Limit results for performance
         let totalResults = 0;
         let lastRefreshCount = 0;
-        // Callback to handle results progressively
-        const onResultFound = (result, parents) => {
-            this.searchResults.add(result.fsPath);
+        // Filter the index
+        for (const item of this.fileIndex) {
+            if (this.abortSearch || totalResults >= maxResults || this.currentSearchToken !== token) {
+                break;
+            }
+            // Check search query
+            if (this.searchQuery && !item.nameWithoutExtLower.includes(this.searchQuery)) {
+                continue;
+            }
+            // Check suffix filter
+            if (this.suffixFilter) {
+                const filterExt = this.suffixFilter.startsWith('.') ? this.suffixFilter : `.${this.suffixFilter}`;
+                if (item.extLower !== filterExt) {
+                    continue;
+                }
+            }
+            // Match found
+            this.searchResults.add(item.uri.fsPath);
             totalResults++;
             // Mark all parent folders for expansion
+            const parents = (0, utils_1.getParentFolders)(item.uri, item.root);
             for (const parent of parents) {
-                this.expandedFolders.add(parent.fsPath);
+                this.expandedFolders.add(parent.fsPath.toLowerCase());
             }
             // Refresh UI every 50 results for progressive display
             if (totalResults - lastRefreshCount >= 50) {
                 lastRefreshCount = totalResults;
                 this.refresh();
+                // Yield to UI
+                await new Promise(resolve => setTimeout(resolve, 0));
             }
-        };
-        for (const folder of vscode.workspace.workspaceFolders) {
-            if (this.abortSearch || totalResults >= maxResults) {
-                break;
-            }
-            await (0, utils_1.searchFiles)(folder.uri, this.searchQuery, this.suffixFilter, folder.uri, onResultFound, () => this.abortSearch || totalResults >= maxResults);
         }
     }
     async expandSearchResults() {
-        // Skip auto-expansion for performance - folders are already marked
-        // and will show correctly in the tree view
-        // Users can manually expand folders if needed
-        return;
+        if (this.searchResults.size > 0 && this.treeView) {
+            // Reveal the first result to ensure tree is open
+            const first = this.searchResults.values().next().value;
+            if (first) {
+                try {
+                    await this.treeView.reveal(vscode.Uri.file(first), { select: false, focus: false, expand: true });
+                }
+                catch (e) { }
+            }
+        }
     }
     getSearchQuery() {
         return this.searchQuery;
@@ -134,30 +235,14 @@ class FileExplorerProvider {
         this._onDidChangeTreeData.fire();
     }
     getTreeItem(element) {
-        // Show loading indicator
-        if (element.toString() === 'file:///searching') {
-            const loadingItem = new vscode.TreeItem('Searching...');
-            loadingItem.iconPath = new vscode.ThemeIcon('sync~spin');
-            loadingItem.tooltip = 'Please wait while searching for files';
-            return loadingItem;
-        }
         return this.createTreeItem(element);
     }
     async getChildren(element) {
         if (!element) {
-            // Show loading indicator at root level when searching
-            if (this.isSearching && vscode.workspace.workspaceFolders) {
-                // Return a special URI to show loading message
-                return [vscode.Uri.parse('file:///searching')];
-            }
             // Return workspace folders as root
             if (vscode.workspace.workspaceFolders) {
                 return vscode.workspace.workspaceFolders.map(folder => folder.uri);
             }
-            return [];
-        }
-        // Don't show children while searching
-        if (this.isSearching) {
             return [];
         }
         try {
@@ -177,7 +262,7 @@ class FileExplorerProvider {
                 fileItems = fileItems.filter(item => {
                     const isDirectory = item.type === vscode.FileType.Directory;
                     // Always show folders that contain matching files
-                    if (isDirectory && this.expandedFolders.has(item.uri.fsPath)) {
+                    if (isDirectory && this.expandedFolders.has(item.uri.fsPath.toLowerCase())) {
                         return true;
                     }
                     // Show files that match the search
@@ -221,7 +306,7 @@ class FileExplorerProvider {
         const basename = path.basename(uri.fsPath);
         // Check if this is a workspace root folder or should be expanded for search
         const isWorkspaceRoot = vscode.workspace.workspaceFolders?.some(folder => folder.uri.fsPath === uri.fsPath);
-        const shouldExpand = isWorkspaceRoot || this.expandedFolders.has(uri.fsPath);
+        const shouldExpand = isWorkspaceRoot || this.expandedFolders.has(uri.fsPath.toLowerCase());
         // Create tree item with highlighting if searching
         let label = basename;
         if (this.searchQuery && !isDirectory) {
@@ -242,6 +327,13 @@ class FileExplorerProvider {
         const treeItem = new vscode.TreeItem(label, isDirectory
             ? (shouldExpand ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed)
             : vscode.TreeItemCollapsibleState.None);
+        // Set ID to ensure state is reset during search
+        if (this.searchQuery) {
+            treeItem.id = uri.fsPath + '?search';
+        }
+        else {
+            treeItem.id = uri.fsPath;
+        }
         treeItem.resourceUri = uri;
         treeItem.contextValue = isDirectory ? 'folder' : 'file';
         treeItem.iconPath = (0, utils_1.getFileIcon)(uri, isDirectory);

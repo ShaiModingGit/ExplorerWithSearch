@@ -84,6 +84,15 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
         });
     }
 
+    public setStatus(status: 'indexing' | 'ready') {
+        if (this._view) {
+            this._view.webview.postMessage({
+                type: 'status',
+                status: status
+            });
+        }
+    }
+
     private _restoreState() {
         if (this._view && (this._currentSearch || this._currentFilter)) {
             this._view.webview.postMessage({
@@ -104,17 +113,26 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
     <style>
         body {
             padding: 10px;
+            padding-bottom: 5px;
             font-family: var(--vscode-font-family);
+            overflow-y: auto;
+            box-sizing: border-box;
         }
         .search-container {
             display: flex;
             flex-direction: column;
             gap: 8px;
+            height: 100%;
         }
         .input-group {
             display: flex;
             flex-direction: column;
             gap: 4px;
+        }
+        .label-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         .filter-row {
             display: flex;
@@ -178,12 +196,8 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
             background: var(--vscode-button-secondaryHoverBackground);
         }
         .status-message {
-            margin-top: 8px;
-            padding: 6px 8px;
-            font-size: 12px;
+            font-size: 11px;
             color: var(--vscode-descriptionForeground);
-            background: var(--vscode-editorWidget-background);
-            border-radius: 3px;
             display: none;
             align-items: center;
             gap: 6px;
@@ -214,7 +228,10 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
 <body>
     <div class="search-container">
         <div class="input-group">
-            <label for="searchBox">Search files:</label>
+            <div class="label-row">
+                <label for="searchBox">Search files:</label>
+                <div id="statusMessage" class="status-message"></div>
+            </div>
             <div class="search-row">
                 <input 
                     type="text" 
@@ -240,7 +257,6 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
                 <button id="applyFilterBtn">Apply</button>
             </div>
         </div>
-        <div id="statusMessage" class="status-message"></div>
     </div>
     <script>
         const vscode = acquireVsCodeApi();
@@ -254,6 +270,7 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
         // Track the currently applied filter (separate from what's typed in the box)
         let appliedFilter = '';
         let searchInProgress = false;
+        let isTyping = false;
 
         // Notify extension that webview is ready
         window.addEventListener('load', () => {
@@ -270,6 +287,14 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
                 if (message.filter) {
                     filterBox.value = message.filter;
                     appliedFilter = message.filter;
+                }
+            } else if (message.type === 'status') {
+                if (message.status === 'indexing') {
+                    showStatus('Indexing workspace...');
+                } else if (message.status === 'ready') {
+                    if (!isTyping) {
+                        hideStatus();
+                    }
                 }
             }
         });
@@ -300,6 +325,7 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
         let searchTimeout;
         searchBox.addEventListener('input', (e) => {
             const value = e.target.value;
+            isTyping = true;
             
             // If search is in progress, abort it first
             if (searchInProgress) {
@@ -321,6 +347,7 @@ export class SearchViewProvider implements vscode.WebviewViewProvider {
             
             // Wait 500ms (0.5 seconds) before starting search
             searchTimeout = setTimeout(() => {
+                isTyping = false;
                 if (value || appliedFilter) {
                     showStatus('Searching...');
                 }

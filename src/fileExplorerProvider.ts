@@ -1,11 +1,14 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { FileItem, FileSortOrder } from './types';
-import { shouldExclude, sortFileItems, getFileIcon, searchFiles, sortBySearchRelevance, getParentFolders, matchesSearch, matchesSuffixFilter } from './utils';
+import { shouldExclude, sortFileItems, getFileIcon, searchFiles, sortBySearchRelevance, getParentFolders, matchesSearch, matchesSuffixFilter, indexWorkspace } from './utils';
 
 export class FileExplorerProvider implements vscode.TreeDataProvider<vscode.Uri> {
     private _onDidChangeTreeData: vscode.EventEmitter<vscode.Uri | undefined | null | void> = new vscode.EventEmitter<vscode.Uri | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<vscode.Uri | undefined | null | void> = this._onDidChangeTreeData.event;
+
+    private _onDidIndexChange: vscode.EventEmitter<boolean> = new vscode.EventEmitter<boolean>();
+    readonly onDidIndexChange: vscode.Event<boolean> = this._onDidIndexChange.event;
 
     private searchQuery: string = '';
     private suffixFilter: string = '';
@@ -14,6 +17,13 @@ export class FileExplorerProvider implements vscode.TreeDataProvider<vscode.Uri>
     private treeView?: vscode.TreeView<vscode.Uri>;
     private isSearching: boolean = false;
     private abortSearch: boolean = false;
+    private currentSearchToken: number = 0;
+
+    // Indexing properties
+    private fileIndex: { uri: vscode.Uri, name: string, nameWithoutExtLower: string, extLower: string, root: vscode.Uri }[] = [];
+    private isIndexed: boolean = false;
+    private isIndexing: boolean = false;
+    private indexingPromise: Promise<void> | undefined;
 
     constructor() { }
 
@@ -22,6 +32,7 @@ export class FileExplorerProvider implements vscode.TreeDataProvider<vscode.Uri>
     }
 
     async setSearchQuery(query: string): Promise<void> {
+        const myToken = ++this.currentSearchToken;
         this.searchQuery = query.toLowerCase();
 
         // If both search and filter are empty, just refresh without searching
@@ -36,16 +47,21 @@ export class FileExplorerProvider implements vscode.TreeDataProvider<vscode.Uri>
         this.isSearching = true;
         this.refresh(); // Show loading state
 
-        await this.updateSearchResults();
-
-        this.isSearching = false;
-        if (!this.abortSearch) {
-            this.refresh();
-            await this.expandSearchResults();
+        try {
+            await this.updateSearchResults(myToken);
+        } finally {
+            if (this.currentSearchToken === myToken) {
+                this.isSearching = false;
+                if (!this.abortSearch) {
+                    this.refresh();
+                    await this.expandSearchResults();
+                }
+            }
         }
     }
 
     async setSuffixFilter(suffix: string): Promise<void> {
+        const myToken = ++this.currentSearchToken;
         this.suffixFilter = suffix.toLowerCase();
 
         // If both search and filter are empty, just refresh without searching
@@ -60,17 +76,88 @@ export class FileExplorerProvider implements vscode.TreeDataProvider<vscode.Uri>
         this.isSearching = true;
         this.refresh(); // Show loading state
 
-        // Re-run the search with the new filter
-        await this.updateSearchResults();
-
-        this.isSearching = false;
-        if (!this.abortSearch) {
-            this.refresh();
-            await this.expandSearchResults();
+        try {
+            // Re-run the search with the new filter
+            await this.updateSearchResults(myToken);
+        } finally {
+            if (this.currentSearchToken === myToken) {
+                this.isSearching = false;
+                if (!this.abortSearch) {
+                    this.refresh();
+                    await this.expandSearchResults();
+                }
+            }
         }
     }
 
-    private async updateSearchResults(): Promise<void> {
+    async rebuildIndex(): Promise<void> {
+        this.isIndexed = false;
+        this.indexingPromise = undefined;
+        await this.buildIndex();
+
+        // Re-run search if active
+        if (this.searchQuery || this.suffixFilter) {
+            const myToken = ++this.currentSearchToken;
+            this.isSearching = true;
+            this.refresh();
+            try {
+                await this.updateSearchResults(myToken);
+            } finally {
+                if (this.currentSearchToken === myToken) {
+                    this.isSearching = false;
+                    if (!this.abortSearch) {
+                        this.refresh();
+                        await this.expandSearchResults();
+                    }
+                }
+            }
+        }
+    }
+
+    private async buildIndex(): Promise<void> {
+        if (this.isIndexed) {
+            return;
+        }
+
+        if (this.indexingPromise) {
+            return this.indexingPromise;
+        }
+
+        this.indexingPromise = (async () => {
+            this.isIndexing = true;
+            this._onDidIndexChange.fire(true);
+            this.fileIndex = [];
+
+            if (vscode.workspace.workspaceFolders) {
+                for (const folder of vscode.workspace.workspaceFolders) {
+                    await indexWorkspace(
+                        folder.uri,
+                        (uri, name) => {
+                            const ext = path.extname(name);
+                            const nameWithoutExt = path.basename(name, ext);
+                            this.fileIndex.push({
+                                uri,
+                                name,
+                                nameWithoutExtLower: nameWithoutExt.toLowerCase(),
+                                extLower: ext.toLowerCase(),
+                                root: folder.uri
+                            });
+                        },
+                        () => false // Don't abort indexing, it's one-time
+                    );
+                }
+            }
+
+            this.isIndexed = true;
+            this.isIndexing = false;
+            this._onDidIndexChange.fire(false);
+            this.indexingPromise = undefined;
+        })();
+
+        return this.indexingPromise;
+    }
+
+    private async updateSearchResults(token: number): Promise<void> {
         this.searchResults.clear();
         this.expandedFolders.clear();
 
@@ -78,7 +165,13 @@ export class FileExplorerProvider implements vscode.TreeDataProvider<vscode.Uri>
             return;
         }
 
-        if (!vscode.workspace.workspaceFolders) {
+        // Ensure index is built
+        if (!this.isIndexed) {
+            await this.buildIndex();
+        }
+
+        // Check if this search has been superseded
+        if (this.currentSearchToken !== token) {
             return;
         }
 
@@ -86,44 +179,55 @@ export class FileExplorerProvider implements vscode.TreeDataProvider<vscode.Uri>
         let totalResults = 0;
         let lastRefreshCount = 0;
 
-        // Callback to handle results progressively
-        const onResultFound = (result: vscode.Uri, parents: vscode.Uri[]) => {
-            this.searchResults.add(result.fsPath);
+        // Filter the index
+        for (const item of this.fileIndex) {
+            if (this.abortSearch || totalResults >= maxResults || this.currentSearchToken !== token) {
+                break;
+            }
+
+            // Check search query
+            if (this.searchQuery && !item.nameWithoutExtLower.includes(this.searchQuery)) {
+                continue;
+            }
+
+            // Check suffix filter
+            if (this.suffixFilter) {
+                const filterExt = this.suffixFilter.startsWith('.') ? this.suffixFilter : `.${this.suffixFilter}`;
+                if (item.extLower !== filterExt) {
+                    continue;
+                }
+            }
+
+            // Match found
+            this.searchResults.add(item.uri.fsPath);
             totalResults++;
 
             // Mark all parent folders for expansion
+            const parents = getParentFolders(item.uri, item.root);
             for (const parent of parents) {
-                this.expandedFolders.add(parent.fsPath);
+                this.expandedFolders.add(parent.fsPath.toLowerCase());
             }
 
             // Refresh UI every 50 results for progressive display
             if (totalResults - lastRefreshCount >= 50) {
                 lastRefreshCount = totalResults;
                 this.refresh();
+                // Yield to UI
+                await new Promise(resolve => setTimeout(resolve, 0));
             }
-        };
-
-        for (const folder of vscode.workspace.workspaceFolders) {
-            if (this.abortSearch || totalResults >= maxResults) {
-                break;
-            }
-
-            await searchFiles(
-                folder.uri,
-                this.searchQuery,
-                this.suffixFilter,
-                folder.uri,
-                onResultFound,
-                () => this.abortSearch || totalResults >= maxResults
-            );
         }
     }
 
     private async expandSearchResults(): Promise<void> {
-        // Skip auto-expansion for performance - folders are already marked
-        // and will show correctly in the tree view
-        // Users can manually expand folders if needed
-        return;
+        if (this.searchResults.size > 0 && this.treeView) {
+            // Reveal the first result to ensure tree is open
+            const first = this.searchResults.values().next().value;
+            if (first) {
+                try {
+                    await this.treeView.reveal(vscode.Uri.file(first), { select: false, focus: false, expand: true });
+                } catch (e) { }
+            }
+        }
     }
 
     getSearchQuery(): string {
@@ -145,34 +249,15 @@ export class FileExplorerProvider implements vscode.TreeDataProvider<vscode.Uri>
     }
 
     getTreeItem(element: vscode.Uri): vscode.TreeItem | Thenable<vscode.TreeItem> {
-        // Show loading indicator
-        if (element.toString() === 'file:///searching') {
-            const loadingItem = new vscode.TreeItem('Searching...');
-            loadingItem.iconPath = new vscode.ThemeIcon('sync~spin');
-            loadingItem.tooltip = 'Please wait while searching for files';
-            return loadingItem;
-        }
-
         return this.createTreeItem(element);
     }
 
     async getChildren(element?: vscode.Uri): Promise<vscode.Uri[]> {
         if (!element) {
-            // Show loading indicator at root level when searching
-            if (this.isSearching && vscode.workspace.workspaceFolders) {
-                // Return a special URI to show loading message
-                return [vscode.Uri.parse('file:///searching')];
-            }
-
             // Return workspace folders as root
             if (vscode.workspace.workspaceFolders) {
                 return vscode.workspace.workspaceFolders.map(folder => folder.uri);
             }
-            return [];
-        }
-
-        // Don't show children while searching
-        if (this.isSearching) {
             return [];
         }
 
@@ -196,7 +281,7 @@ export class FileExplorerProvider implements vscode.TreeDataProvider<vscode.Uri>
                     const isDirectory = item.type === vscode.FileType.Directory;
 
                     // Always show folders that contain matching files
-                    if (isDirectory && this.expandedFolders.has(item.uri.fsPath)) {
+                    if (isDirectory && this.expandedFolders.has(item.uri.fsPath.toLowerCase())) {
                         return true;
                     }
 
@@ -249,7 +334,7 @@ export class FileExplorerProvider implements vscode.TreeDataProvider<vscode.Uri>
         const isWorkspaceRoot = vscode.workspace.workspaceFolders?.some(
             folder => folder.uri.fsPath === uri.fsPath
         );
-        const shouldExpand = isWorkspaceRoot || this.expandedFolders.has(uri.fsPath);
+        const shouldExpand = isWorkspaceRoot || this.expandedFolders.has(uri.fsPath.toLowerCase());
 
         // Create tree item with highlighting if searching
         let label: string | vscode.TreeItemLabel = basename;
@@ -277,6 +362,13 @@ export class FileExplorerProvider implements vscode.TreeDataProvider<vscode.Uri>
                 ? (shouldExpand ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed)
                 : vscode.TreeItemCollapsibleState.None
         );
+
+        // Set ID to ensure state is reset during search
+        if (this.searchQuery) {
+            treeItem.id = uri.fsPath + '?search';
+        } else {
+            treeItem.id = uri.fsPath;
+        }
 
         treeItem.resourceUri = uri;
         treeItem.contextValue = isDirectory ? 'folder' : 'file';

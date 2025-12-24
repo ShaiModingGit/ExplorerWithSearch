@@ -321,10 +321,65 @@ export function getParentFolders(uri: vscode.Uri, workspaceRoot: vscode.Uri): vs
     const parents: vscode.Uri[] = [];
     let current = vscode.Uri.joinPath(uri, '..');
 
-    while (current.fsPath !== workspaceRoot.fsPath && current.fsPath.startsWith(workspaceRoot.fsPath)) {
+    // Normalize paths for comparison to handle case sensitivity and different separators
+    const rootPath = workspaceRoot.fsPath.toLowerCase();
+
+    while (current.fsPath.toLowerCase() !== rootPath) {
+        const currentPath = current.fsPath.toLowerCase();
+
+        // Check if we've gone past the root or are outside
+        if (!currentPath.startsWith(rootPath)) {
+            break;
+        }
+
         parents.push(current);
         current = vscode.Uri.joinPath(current, '..');
     }
 
     return parents;
+}
+
+/**
+ * Recursively index all files in the workspace
+ */
+export async function indexWorkspace(
+    uri: vscode.Uri,
+    onFileFound: (uri: vscode.Uri, name: string) => void,
+    shouldAbort?: () => boolean
+): Promise<void> {
+    let operationCount = 0;
+
+    async function indexRecursive(currentUri: vscode.Uri): Promise<void> {
+        try {
+            if (shouldAbort && shouldAbort()) {
+                return;
+            }
+
+            // Yield to event loop every 50 operations
+            operationCount++;
+            if (operationCount % 50 === 0) {
+                await new Promise(resolve => setImmediate(resolve));
+            }
+
+            const entries = await vscode.workspace.fs.readDirectory(currentUri);
+
+            for (const [name, type] of entries) {
+                if (shouldExclude(name, currentUri)) {
+                    continue;
+                }
+
+                if (type === vscode.FileType.File) {
+                    const childUri = vscode.Uri.joinPath(currentUri, name);
+                    onFileFound(childUri, name);
+                } else if (type === vscode.FileType.Directory) {
+                    const childUri = vscode.Uri.joinPath(currentUri, name);
+                    await indexRecursive(childUri);
+                }
+            }
+        } catch (error) {
+            // Ignore errors
+        }
+    }
+
+    await indexRecursive(uri);
 }

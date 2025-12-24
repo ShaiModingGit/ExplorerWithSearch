@@ -23,7 +23,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getParentFolders = exports.searchFiles = exports.sortBySearchRelevance = exports.getMatchIndex = exports.matchesSuffixFilter = exports.matchesSearch = exports.getRelativePath = exports.formatFileSize = exports.getFileIcon = exports.sortFileItems = exports.shouldExclude = void 0;
+exports.indexWorkspace = exports.getParentFolders = exports.searchFiles = exports.sortBySearchRelevance = exports.getMatchIndex = exports.matchesSuffixFilter = exports.matchesSearch = exports.getRelativePath = exports.formatFileSize = exports.getFileIcon = exports.sortFileItems = exports.shouldExclude = void 0;
 const vscode = __importStar(require("vscode"));
 const path = __importStar(require("path"));
 /**
@@ -306,11 +306,55 @@ exports.searchFiles = searchFiles;
 function getParentFolders(uri, workspaceRoot) {
     const parents = [];
     let current = vscode.Uri.joinPath(uri, '..');
-    while (current.fsPath !== workspaceRoot.fsPath && current.fsPath.startsWith(workspaceRoot.fsPath)) {
+    // Normalize paths for comparison to handle case sensitivity and different separators
+    const rootPath = workspaceRoot.fsPath.toLowerCase();
+    while (current.fsPath.toLowerCase() !== rootPath) {
+        const currentPath = current.fsPath.toLowerCase();
+        // Check if we've gone past the root or are outside
+        if (!currentPath.startsWith(rootPath)) {
+            break;
+        }
         parents.push(current);
         current = vscode.Uri.joinPath(current, '..');
     }
     return parents;
 }
 exports.getParentFolders = getParentFolders;
+/**
+ * Recursively index all files in the workspace
+ */
+async function indexWorkspace(uri, onFileFound, shouldAbort) {
+    let operationCount = 0;
+    async function indexRecursive(currentUri) {
+        try {
+            if (shouldAbort && shouldAbort()) {
+                return;
+            }
+            // Yield to event loop every 50 operations
+            operationCount++;
+            if (operationCount % 50 === 0) {
+                await new Promise(resolve => setImmediate(resolve));
+            }
+            const entries = await vscode.workspace.fs.readDirectory(currentUri);
+            for (const [name, type] of entries) {
+                if (shouldExclude(name, currentUri)) {
+                    continue;
+                }
+                if (type === vscode.FileType.File) {
+                    const childUri = vscode.Uri.joinPath(currentUri, name);
+                    onFileFound(childUri, name);
+                }
+                else if (type === vscode.FileType.Directory) {
+                    const childUri = vscode.Uri.joinPath(currentUri, name);
+                    await indexRecursive(childUri);
+                }
+            }
+        }
+        catch (error) {
+            // Ignore errors
+        }
+    }
+    await indexRecursive(uri);
+}
+exports.indexWorkspace = indexWorkspace;
 //# sourceMappingURL=utils.js.map
