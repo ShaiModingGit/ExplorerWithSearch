@@ -18,6 +18,7 @@ An advanced file explorer extension for Visual Studio Code, inspired by VS Code'
   - **Clear**: Reset search and filter to show all files
 - **Smart Debouncing**: Automatic 0.5s delay while typing to reduce unnecessary searches
 - **Visual Feedback**: Animated loading indicator shows search progress
+- **Multiple Views**: Toggle between "Tree view" and "List view" to ease viewing and performance
 
 ### �🗂️ Full File System Navigation
 - Browse workspace folders and files in a tree view
@@ -190,6 +191,8 @@ The extension follows VS Code's extension architecture:
 - Some file icons may not display correctly for uncommon file types
 
 ## Release Notes
+### 1.5.5
+- Added new toggle view mode to switch between "Tree list" to "File list" in the top FIILES window icons
 
 ### 1.5.0
 - Fixed search 

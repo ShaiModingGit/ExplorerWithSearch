@@ -119,7 +119,8 @@ class SearchViewProvider {
     <style>
         body {
             padding: 10px;
-            padding-bottom: 5px;
+            padding-bottom: 0px;
+            margin: 0;
             font-family: var(--vscode-font-family);
             overflow-y: auto;
             box-sizing: border-box;
@@ -129,6 +130,7 @@ class SearchViewProvider {
             flex-direction: column;
             gap: 8px;
             height: 100%;
+            padding-bottom: 0px;
         }
         .input-group {
             display: flex;

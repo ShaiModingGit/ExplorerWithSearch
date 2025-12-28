@@ -95,6 +95,12 @@ export function activate(context: vscode.ExtensionContext) {
     );
 
     context.subscriptions.push(
+        vscode.commands.registerCommand('fileExplorePlusPlus.toggleViewMode', () => {
+            fileExplorerProvider.toggleViewMode();
+        })
+    );
+
+    context.subscriptions.push(
         vscode.commands.registerCommand('fileExplorePlusPlus.openFile', (resource: vscode.Uri) => {
             vscode.window.showTextDocument(resource);
         })

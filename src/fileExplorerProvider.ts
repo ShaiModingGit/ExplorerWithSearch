@@ -18,6 +18,7 @@ export class FileExplorerProvider implements vscode.TreeDataProvider<vscode.Uri>
     private isSearching: boolean = false;
     private abortSearch: boolean = false;
     private currentSearchToken: number = 0;
+    private viewMode: 'tree' | 'list' = 'tree';
 
     // Indexing properties
     private fileIndex: { uri: vscode.Uri, name: string, nameWithoutExtLower: string, extLower: string, root: vscode.Uri }[] = [];
@@ -244,6 +245,15 @@ export class FileExplorerProvider implements vscode.TreeDataProvider<vscode.Uri>
         this.refresh();
     }
 
+    toggleViewMode(): void {
+        this.viewMode = this.viewMode === 'tree' ? 'list' : 'tree';
+        this.refresh();
+    }
+
+    getViewMode(): 'tree' | 'list' {
+        return this.viewMode;
+    }
+
     refresh(): void {
         this._onDidChangeTreeData.fire();
     }
@@ -253,6 +263,62 @@ export class FileExplorerProvider implements vscode.TreeDataProvider<vscode.Uri>
     }
 
     async getChildren(element?: vscode.Uri): Promise<vscode.Uri[]> {
+        // List view: return flat list of all files
+        if (this.viewMode === 'list' && !element) {
+            // Ensure index is built
+            if (!this.isIndexed) {
+                await this.buildIndex();
+            }
+
+            // Filter and return matching files
+            let files = this.fileIndex;
+
+            if (this.searchQuery || this.suffixFilter) {
+                files = files.filter(item => {
+                    // Check search query
+                    if (this.searchQuery && !item.nameWithoutExtLower.includes(this.searchQuery)) {
+                        return false;
+                    }
+
+                    // Check suffix filter
+                    if (this.suffixFilter) {
+                        const filterExt = this.suffixFilter.startsWith('.') ? this.suffixFilter : `.${this.suffixFilter}`;
+                        if (item.extLower !== filterExt.toLowerCase()) {
+                            return false;
+                        }
+                    }
+
+                    return true;
+                });
+            }
+
+            // Sort by search relevance if searching
+            if (this.searchQuery) {
+                files = [...files].sort((a, b) => {
+                    const aName = a.nameWithoutExtLower;
+                    const bName = b.nameWithoutExtLower;
+                    const query = this.searchQuery;
+
+                    // Check if name starts with query (highest priority)
+                    const aStarts = aName.startsWith(query);
+                    const bStarts = bName.startsWith(query);
+                    if (aStarts && !bStarts) { return -1; }
+                    if (!aStarts && bStarts) { return 1; }
+
+                    // Then by index position (earlier is better)
+                    const aIndex = aName.indexOf(query);
+                    const bIndex = bName.indexOf(query);
+                    if (aIndex !== bIndex) { return aIndex - bIndex; }
+
+                    // Finally by name length (shorter is better)
+                    return aName.length - bName.length;
+                });
+            }
+
+            return files.map(f => f.uri);
+        }
+
+        // Tree view: existing logic
         if (!element) {
             // Return workspace folders as root
             if (vscode.workspace.workspaceFolders) {
@@ -338,6 +404,16 @@ export class FileExplorerProvider implements vscode.TreeDataProvider<vscode.Uri>
 
         // Create tree item with highlighting if searching
         let label: string | vscode.TreeItemLabel = basename;
+        let description: string | undefined = undefined;
+
+        // In list view, show the file path as description
+        if (this.viewMode === 'list' && !isDirectory) {
+            const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
+            if (workspaceFolder) {
+                const relativePath = path.relative(workspaceFolder.uri.fsPath, path.dirname(uri.fsPath));
+                description = relativePath || workspaceFolder.name;
+            }
+        }
 
         if (this.searchQuery && !isDirectory) {
             const nameWithoutExt = path.basename(basename, path.extname(basename));
@@ -363,11 +439,16 @@ export class FileExplorerProvider implements vscode.TreeDataProvider<vscode.Uri>
                 : vscode.TreeItemCollapsibleState.None
         );
 
-        // Set ID to ensure state is reset during search
+        // Set ID to ensure state is reset during search or view mode change
         if (this.searchQuery) {
-            treeItem.id = uri.fsPath + '?search';
+            treeItem.id = uri.fsPath + '?search=' + this.viewMode;
         } else {
-            treeItem.id = uri.fsPath;
+            treeItem.id = uri.fsPath + '?mode=' + this.viewMode;
+        }
+
+        // Set description for list view
+        if (description) {
+            treeItem.description = description;
         }
 
         treeItem.resourceUri = uri;

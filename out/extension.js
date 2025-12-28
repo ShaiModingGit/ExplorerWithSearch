@@ -97,6 +97,9 @@ function activate(context) {
     context.subscriptions.push(vscode.commands.registerCommand('fileExplorePlusPlus.refresh', () => {
         fileExplorerProvider.refresh();
     }));
+    context.subscriptions.push(vscode.commands.registerCommand('fileExplorePlusPlus.toggleViewMode', () => {
+        fileExplorerProvider.toggleViewMode();
+    }));
     context.subscriptions.push(vscode.commands.registerCommand('fileExplorePlusPlus.openFile', (resource) => {
         vscode.window.showTextDocument(resource);
     }));
