@@ -191,6 +191,11 @@ The extension follows VS Code's extension architecture:
 - Some file icons may not display correctly for uncommon file types
 
 ## Release Notes
+### 1.5.7
+- fix filter logic to be more than singel suffix
+- added to exclude file types that are in the workspace setting excluded files 
+- alway show the icons of the "FILES" window so the user can see that he can toggle to list view in that window
+
 ### 1.5.5
 - Added new toggle view mode to switch between "Tree list" to "File list" in the top FIILES window icons
 

@@ -23,9 +23,30 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.indexWorkspace = exports.getParentFolders = exports.searchFiles = exports.sortBySearchRelevance = exports.getMatchIndex = exports.matchesSuffixFilter = exports.matchesSearch = exports.getRelativePath = exports.formatFileSize = exports.getFileIcon = exports.sortFileItems = exports.shouldExclude = void 0;
+exports.indexWorkspace = exports.getParentFolders = exports.searchFiles = exports.sortBySearchRelevance = exports.getMatchIndex = exports.matchesSuffixFilter = exports.matchesSearch = exports.getRelativePath = exports.formatFileSize = exports.getFileIcon = exports.sortFileItems = exports.shouldExclude = exports.getExcludedExtensionsFromWorkspace = void 0;
 const vscode = __importStar(require("vscode"));
 const path = __importStar(require("path"));
+/**
+ * Extract file extensions from workspace exclude patterns
+ * Returns comma-separated list of extensions (e.g., "log,tmp,cache")
+ */
+function getExcludedExtensionsFromWorkspace() {
+    const config = vscode.workspace.getConfiguration('files');
+    const excludePatterns = config.get('exclude', {});
+    const extensions = new Set();
+    for (const pattern in excludePatterns) {
+        if (excludePatterns[pattern]) {
+            // Match patterns like *.ext or **/*.ext
+            const extMatch = pattern.match(/\*\*?\/\*\.(\w+)$|^\*\.(\w+)$/);
+            if (extMatch) {
+                const ext = extMatch[1] || extMatch[2];
+                extensions.add(ext);
+            }
+        }
+    }
+    return Array.from(extensions).join(',');
+}
+exports.getExcludedExtensionsFromWorkspace = getExcludedExtensionsFromWorkspace;
 /**
  * Check if a file/folder should be excluded based on configuration
  */
@@ -187,14 +208,24 @@ function matchesSearch(filename, query) {
 exports.matchesSearch = matchesSearch;
 /**
  * Check if a filename matches the suffix filter
+ * Supports multiple comma-separated suffixes (e.g., ".ts,.js" or "ts,js")
  */
 function matchesSuffixFilter(filename, suffix) {
     if (!suffix) {
         return true;
     }
     const ext = path.extname(filename).toLowerCase();
-    const filterExt = suffix.startsWith('.') ? suffix.toLowerCase() : `.${suffix.toLowerCase()}`;
-    return ext === filterExt;
+    // Split by comma to support multiple suffixes
+    const suffixes = suffix.split(',').map(s => s.trim());
+    for (const suf of suffixes) {
+        if (!suf)
+            continue;
+        const filterExt = suf.startsWith('.') ? suf.toLowerCase() : `.${suf.toLowerCase()}`;
+        if (ext === filterExt) {
+            return true;
+        }
+    }
+    return false;
 }
 exports.matchesSuffixFilter = matchesSuffixFilter;
 /**

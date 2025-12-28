@@ -8,6 +8,25 @@ export function activate(context: vscode.ExtensionContext) {
     // Create the file explorer provider
     const fileExplorerProvider = new FileExplorerProvider();
 
+    // Import utility to get excluded extensions
+    const { getExcludedExtensionsFromWorkspace } = require('./utils');
+
+    // Apply workspace exclude extensions as automatic filter
+    const applyWorkspaceExcludes = () => {
+        const excludedExtensions = getExcludedExtensionsFromWorkspace();
+        fileExplorerProvider.setWorkspaceExcludeExtensions(excludedExtensions);
+    };
+    applyWorkspaceExcludes();
+
+    // Watch for workspace configuration changes
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration(e => {
+            if (e.affectsConfiguration('files.exclude')) {
+                applyWorkspaceExcludes();
+            }
+        })
+    );
+
     // Restore saved search state
     const savedSearch = context.workspaceState.get<string>('fileExplorePlusPlus.searchQuery', '');
     const savedFilter = context.workspaceState.get<string>('fileExplorePlusPlus.filterSuffix', '');

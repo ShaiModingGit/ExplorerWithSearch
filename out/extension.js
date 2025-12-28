@@ -31,6 +31,20 @@ function activate(context) {
     console.log('File Explorer++ extension is now active');
     // Create the file explorer provider
     const fileExplorerProvider = new fileExplorerProvider_1.FileExplorerProvider();
+    // Import utility to get excluded extensions
+    const { getExcludedExtensionsFromWorkspace } = require('./utils');
+    // Apply workspace exclude extensions as automatic filter
+    const applyWorkspaceExcludes = () => {
+        const excludedExtensions = getExcludedExtensionsFromWorkspace();
+        fileExplorerProvider.setWorkspaceExcludeExtensions(excludedExtensions);
+    };
+    applyWorkspaceExcludes();
+    // Watch for workspace configuration changes
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
+        if (e.affectsConfiguration('files.exclude')) {
+            applyWorkspaceExcludes();
+        }
+    }));
     // Restore saved search state
     const savedSearch = context.workspaceState.get('fileExplorePlusPlus.searchQuery', '');
     const savedFilter = context.workspaceState.get('fileExplorePlusPlus.filterSuffix', '');

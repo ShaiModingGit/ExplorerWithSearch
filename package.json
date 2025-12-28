@@ -8,7 +8,7 @@
     "type": "git",
     "url": "https://github.com/ShaiModingGit/ExplorerWithSearch"
   },
-  "version": "1.5.5",
+  "version": "1.5.7",
   "icon": "resources/icon.png",
   "engines": {
     "vscode": "^1.75.0"
@@ -98,25 +98,25 @@
         {
           "command": "fileExplorePlusPlus.refresh",
           "when": "view == fileExplorePlusPlus.treeView",
-          "group": "navigation@1",
+          "group": "navigation",
           "icon": "$(refresh)"
         },
         {
           "command": "fileExplorePlusPlus.newFile",
           "when": "view == fileExplorePlusPlus.treeView",
-          "group": "navigation@2",
+          "group": "navigation",
           "icon": "$(new-file)"
         },
         {
           "command": "fileExplorePlusPlus.newFolder",
           "when": "view == fileExplorePlusPlus.treeView",
-          "group": "navigation@3",
+          "group": "navigation",
           "icon": "$(new-folder)"
         },
         {
           "command": "fileExplorePlusPlus.toggleViewMode",
           "when": "view == fileExplorePlusPlus.treeView",
-          "group": "navigation@4",
+          "group": "navigation",
           "icon": "$(list-tree)"
         }
       ],

@@ -35,6 +35,7 @@ class FileExplorerProvider {
         this.onDidIndexChange = this._onDidIndexChange.event;
         this.searchQuery = '';
         this.suffixFilter = '';
+        this.workspaceExcludeExtensions = '';
         this.searchResults = new Set();
         this.expandedFolders = new Set();
         this.isSearching = false;
@@ -49,11 +50,36 @@ class FileExplorerProvider {
     setTreeView(treeView) {
         this.treeView = treeView;
     }
+    setWorkspaceExcludeExtensions(extensions) {
+        this.workspaceExcludeExtensions = extensions;
+        this.refresh();
+    }
+    shouldExcludeByWorkspace(fileExt) {
+        // Check if file extension is in workspace exclude list
+        if (!this.workspaceExcludeExtensions) {
+            return false;
+        }
+        const excludedExts = this.workspaceExcludeExtensions.split(',').map(s => s.trim());
+        for (const ext of excludedExts) {
+            if (!ext)
+                continue;
+            const excludeExt = ext.startsWith('.') ? ext : `.${ext}`;
+            if (fileExt === excludeExt) {
+                return true;
+            }
+        }
+        return false;
+    }
+    getUserSuffixFilter() {
+        // Return only user-defined suffix filter
+        return this.suffixFilter;
+    }
     async setSearchQuery(query) {
         const myToken = ++this.currentSearchToken;
         this.searchQuery = query.toLowerCase();
         // If both search and filter are empty, just refresh without searching
-        if (!this.searchQuery && !this.suffixFilter) {
+        const userFilter = this.getUserSuffixFilter();
+        if (!this.searchQuery && !userFilter) {
             this.searchResults.clear();
             this.expandedFolders.clear();
             this.refresh();
@@ -79,7 +105,8 @@ class FileExplorerProvider {
         const myToken = ++this.currentSearchToken;
         this.suffixFilter = suffix.toLowerCase();
         // If both search and filter are empty, just refresh without searching
-        if (!this.searchQuery && !this.suffixFilter) {
+        const userFilter = this.getUserSuffixFilter();
+        if (!this.searchQuery && !userFilter) {
             this.searchResults.clear();
             this.expandedFolders.clear();
             this.refresh();
@@ -107,7 +134,8 @@ class FileExplorerProvider {
         this.indexingPromise = undefined;
         await this.buildIndex();
         // Re-run search if active
-        if (this.searchQuery || this.suffixFilter) {
+        const userFilter = this.getUserSuffixFilter();
+        if (this.searchQuery || userFilter) {
             const myToken = ++this.currentSearchToken;
             this.isSearching = true;
             this.refresh();
@@ -162,7 +190,8 @@ class FileExplorerProvider {
     async updateSearchResults(token) {
         this.searchResults.clear();
         this.expandedFolders.clear();
-        if (!this.searchQuery && !this.suffixFilter) {
+        const userFilter = this.getUserSuffixFilter();
+        if (!this.searchQuery && !userFilter) {
             return;
         }
         // Ensure index is built
@@ -185,10 +214,25 @@ class FileExplorerProvider {
             if (this.searchQuery && !item.nameWithoutExtLower.includes(this.searchQuery)) {
                 continue;
             }
-            // Check suffix filter
-            if (this.suffixFilter) {
-                const filterExt = this.suffixFilter.startsWith('.') ? this.suffixFilter : `.${this.suffixFilter}`;
-                if (item.extLower !== filterExt) {
+            // Exclude workspace-excluded extensions
+            if (this.shouldExcludeByWorkspace(item.extLower)) {
+                continue;
+            }
+            // Check user suffix filter (supports comma-separated suffixes)
+            const userFilter = this.getUserSuffixFilter();
+            if (userFilter) {
+                const suffixes = userFilter.split(',').map(s => s.trim());
+                let matchesSuffix = false;
+                for (const suf of suffixes) {
+                    if (!suf)
+                        continue;
+                    const filterExt = suf.startsWith('.') ? suf : `.${suf}`;
+                    if (item.extLower === filterExt) {
+                        matchesSuffix = true;
+                        break;
+                    }
+                }
+                if (!matchesSuffix) {
                     continue;
                 }
             }
@@ -254,21 +298,40 @@ class FileExplorerProvider {
             }
             // Filter and return matching files
             let files = this.fileIndex;
-            if (this.searchQuery || this.suffixFilter) {
+            const userFilter = this.getUserSuffixFilter();
+            if (this.searchQuery || userFilter) {
                 files = files.filter(item => {
                     // Check search query
                     if (this.searchQuery && !item.nameWithoutExtLower.includes(this.searchQuery)) {
                         return false;
                     }
-                    // Check suffix filter
-                    if (this.suffixFilter) {
-                        const filterExt = this.suffixFilter.startsWith('.') ? this.suffixFilter : `.${this.suffixFilter}`;
-                        if (item.extLower !== filterExt.toLowerCase()) {
+                    // Exclude workspace-excluded extensions
+                    if (this.shouldExcludeByWorkspace(item.extLower)) {
+                        return false;
+                    }
+                    // Check user suffix filter
+                    if (userFilter) {
+                        const suffixes = userFilter.split(',').map(s => s.trim());
+                        let matchesSuffix = false;
+                        for (const suf of suffixes) {
+                            if (!suf)
+                                continue;
+                            const filterExt = suf.startsWith('.') ? suf : `.${suf}`;
+                            if (item.extLower === filterExt) {
+                                matchesSuffix = true;
+                                break;
+                            }
+                        }
+                        if (!matchesSuffix) {
                             return false;
                         }
                     }
                     return true;
                 });
+            }
+            else {
+                // No search/filter active, but still exclude workspace extensions
+                files = files.filter(item => !this.shouldExcludeByWorkspace(item.extLower));
             }
             // Sort by search relevance if searching
             if (this.searchQuery) {
@@ -318,7 +381,8 @@ class FileExplorerProvider {
                 type
             }));
             // Apply search and suffix filtering
-            if (this.searchQuery || this.suffixFilter) {
+            const userFilter = this.getUserSuffixFilter();
+            if (this.searchQuery || userFilter) {
                 fileItems = fileItems.filter(item => {
                     const isDirectory = item.type === vscode.FileType.Directory;
                     // Always show folders that contain matching files
@@ -330,6 +394,17 @@ class FileExplorerProvider {
                         return true;
                     }
                     return false;
+                });
+            }
+            else {
+                // No search/filter, but still exclude workspace-excluded extensions
+                fileItems = fileItems.filter(item => {
+                    const isDirectory = item.type === vscode.FileType.Directory;
+                    if (isDirectory) {
+                        return true; // Always show directories
+                    }
+                    const fileExt = path.extname(item.name).toLowerCase();
+                    return !this.shouldExcludeByWorkspace(fileExt);
                 });
             }
             // Sort based on configuration or search relevance
