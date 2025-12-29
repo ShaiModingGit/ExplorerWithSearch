@@ -1,0 +1,261 @@
+{
+  "name": "file-explore-plus-plus",
+  "displayName": "File Explorer++",
+  "description": "Advanced file explorer for Visual Studio Code",
+  "author": "Shai",
+  "publisher": "shaisarfaty",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ShaiModingGit/ExplorerWithSearch"
+  },
+  "version": "1.7.0",
+  "icon": "resources/icon.png",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "fileExplorePlusPlus",
+          "title": "File Explorer++",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "fileExplorePlusPlus": [
+        {
+          "id": "fileExplorePlusPlus.searchView",
+          "name": "Search",
+          "type": "webview",
+          "icon": "resources/icon.svg",
+          "visibility": "visible"
+        },
+        {
+          "id": "fileExplorePlusPlus.treeView",
+          "name": "Files",
+          "icon": "resources/icon.svg",
+          "visibility": "visible"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "fileExplorePlusPlus.refresh",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "fileExplorePlusPlus.rebuildIndex",
+        "title": "Rebuild Index",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "fileExplorePlusPlus.openFile",
+        "title": "Open File"
+      },
+      {
+        "command": "fileExplorePlusPlus.revealInExplorer",
+        "title": "Reveal in File Explorer++"
+      },
+      {
+        "command": "fileExplorePlusPlus.newFile",
+        "title": "New File",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "fileExplorePlusPlus.newFolder",
+        "title": "New Folder",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "fileExplorePlusPlus.deleteEntry",
+        "title": "Delete"
+      },
+      {
+        "command": "fileExplorePlusPlus.renameEntry",
+        "title": "Rename"
+      },
+      {
+        "command": "fileExplorePlusPlus.copyPath",
+        "title": "Copy Path"
+      },
+      {
+        "command": "fileExplorePlusPlus.copyRelativePath",
+        "title": "Copy Relative Path"
+      },
+      {
+        "command": "fileExplorePlusPlus.openInExplorer",
+        "title": "Open in Explorer"
+      },
+      {
+        "command": "fileExplorePlusPlus.toggleViewMode",
+        "title": "Toggle View Mode",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "fileExplorePlusPlus.focusSearch",
+        "title": "Focus Search"
+      },
+      {
+        "command": "fileExplorePlusPlus.setKeybinding",
+        "title": "Set Keyboard Shortcut for Focus Search"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "fileExplorePlusPlus.refresh",
+          "when": "view == fileExplorePlusPlus.treeView",
+          "group": "navigation",
+          "icon": "$(refresh)"
+        },
+        {
+          "command": "fileExplorePlusPlus.rebuildIndex",
+          "when": "view == fileExplorePlusPlus.treeView",
+          "group": "navigation@1",
+          "icon": "$(sync)"
+        },
+        {
+          "command": "fileExplorePlusPlus.newFile",
+          "when": "view == fileExplorePlusPlus.treeView",
+          "group": "navigation",
+          "icon": "$(new-file)"
+        },
+        {
+          "command": "fileExplorePlusPlus.newFolder",
+          "when": "view == fileExplorePlusPlus.treeView",
+          "group": "navigation",
+          "icon": "$(new-folder)"
+        },
+        {
+          "command": "fileExplorePlusPlus.toggleViewMode",
+          "when": "view == fileExplorePlusPlus.treeView",
+          "group": "navigation",
+          "icon": "$(list-tree)"
+        },
+        {
+          "command": "fileExplorePlusPlus.setKeybinding",
+          "when": "view == fileExplorePlusPlus.searchView",
+          "group": "1_actions"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "fileExplorePlusPlus.openFile",
+          "when": "view == fileExplorePlusPlus.treeView && viewItem == file",
+          "group": "navigation"
+        },
+        {
+          "command": "fileExplorePlusPlus.renameEntry",
+          "when": "view == fileExplorePlusPlus.treeView",
+          "group": "modification@1"
+        },
+        {
+          "command": "fileExplorePlusPlus.deleteEntry",
+          "when": "view == fileExplorePlusPlus.treeView",
+          "group": "modification@2"
+        },
+        {
+          "command": "fileExplorePlusPlus.newFile",
+          "when": "view == fileExplorePlusPlus.treeView && viewItem == folder",
+          "group": "creation@1"
+        },
+        {
+          "command": "fileExplorePlusPlus.newFolder",
+          "when": "view == fileExplorePlusPlus.treeView && viewItem == folder",
+          "group": "creation@2"
+        },
+        {
+          "command": "fileExplorePlusPlus.copyPath",
+          "when": "view == fileExplorePlusPlus.treeView",
+          "group": "clipboard@1"
+        },
+        {
+          "command": "fileExplorePlusPlus.copyRelativePath",
+          "when": "view == fileExplorePlusPlus.treeView",
+          "group": "clipboard@2"
+        },
+        {
+          "command": "fileExplorePlusPlus.openInExplorer",
+          "when": "view == fileExplorePlusPlus.treeView",
+          "group": "explorer@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "fileExplorePlusPlus.openFile",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "File Explorer++",
+      "properties": {
+        "fileExplorePlusPlus.exclude": {
+          "type": "object",
+          "default": {
+            "**/.git": true,
+            "**/.svn": true,
+            "**/.hg": true,
+            "**/CVS": true,
+            "**/.DS_Store": true,
+            "**/Thumbs.db": true,
+            "**/node_modules": true
+          },
+          "description": "Configure glob patterns for excluding files and folders."
+        },
+        "fileExplorePlusPlus.sortOrder": {
+          "type": "string",
+          "enum": [
+            "default",
+            "mixed",
+            "filesFirst",
+            "type",
+            "modified"
+          ],
+          "default": "default",
+          "description": "Controls sorting order of files and folders in the explorer."
+        },
+        "fileExplorePlusPlus.autoReveal": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically reveal and focus files when opening them."
+        },
+        "fileExplorePlusPlus.defaultViewMode": {
+          "type": "string",
+          "enum": [
+            "tree",
+            "list"
+          ],
+          "default": "tree",
+          "description": "Default view mode for the file explorer (tree or list)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/node": "16.x",
+    "@types/vscode": "^1.75.0",
+    "@typescript-eslint/eslint-plugin": "^5.45.0",
+    "@typescript-eslint/parser": "^5.45.0",
+    "eslint": "^8.28.0",
+    "typescript": "^4.9.3"
+  }
+}
