@@ -3,8 +3,6 @@
 An advanced file explorer extension for Visual Studio Code, inspired by VS Code's native file explorer with enhanced features and customization options.
 
 
-
-
 ## Features
 ![Features](https://github.com/ShaiModingGit/ExplorerWithSearch/blob/main/resources/howto.gif?raw=true)
 
